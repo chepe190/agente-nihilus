@@ -15,6 +15,14 @@ from zoneinfo import ZoneInfo
 from basic_memory import BasicMemory
 from intermediate_tools import IntermediateTools
 
+# [SUPABASE] Importación opcional: si el paquete no está, la app sigue funcionando.
+try:
+    from supabase import create_client
+    SUPABASE_DISPONIBLE = True
+except ImportError:
+    create_client = None
+    SUPABASE_DISPONIBLE = False
+
 # ============================================================
 # CONFIGURACION
 # ============================================================
@@ -32,6 +40,68 @@ st.set_page_config(
     layout="centered",
     initial_sidebar_state="expanded"
 )
+
+# ============================================================
+# [SUPABASE] CONEXION Y GUARDADO DE CONVERSACIONES
+# ============================================================
+
+TABLA_CONVERSACIONES = "conversaciones_nihilus"
+
+
+def obtener_secreto(nombre, default=""):
+    """Lee primero Streamlit Secrets y, si no existe, la variable de entorno (.env)."""
+    try:
+        valor = st.secrets.get(nombre, None)
+        if valor:
+            return str(valor).strip()
+    except Exception:
+        pass
+    return (os.getenv(nombre) or default).strip()
+
+
+@st.cache_resource
+def _crear_cliente_supabase(url, key):
+    # Si lanza excepción, Streamlit NO cachea el fallo y reintenta.
+    return create_client(url, key)
+
+
+def init_supabase():
+    """Devuelve (cliente, error). Nunca imprime la clave."""
+    if not SUPABASE_DISPONIBLE:
+        return None, "Falta instalar el paquete 'supabase' (agrégalo a requirements.txt)."
+
+    # Limpia comillas, espacios y rutas sobrantes (/rest/v1) de la URL.
+    url = obtener_secreto("SUPABASE_URL").strip().strip('"').strip("'").rstrip("/")
+    for sufijo in ("/rest/v1", "/rest"):
+        if url.endswith(sufijo):
+            url = url[: -len(sufijo)].rstrip("/")
+
+    key = obtener_secreto("SUPABASE_KEY").strip().strip('"').strip("'")
+
+    if not url or not key:
+        return None, "Faltan SUPABASE_URL o SUPABASE_KEY."
+
+    try:
+        return _crear_cliente_supabase(url, key), None
+    except Exception as error:
+        return None, f"No se pudo crear el cliente: {error}"
+
+
+supabase, error_supabase = init_supabase()
+
+
+def guardar_en_supabase(pregunta, respuesta):
+    if supabase is None:
+        return False, error_supabase or "Supabase no conectado"
+
+    try:
+        supabase.table(TABLA_CONVERSACIONES).insert(
+            {"pregunta": str(pregunta), "respuesta": str(respuesta)}
+        ).execute()
+        return True, None
+    except Exception as error:
+        print(f"ERROR SUPABASE (conversaciones): {error}")
+        return False, str(error)
 
 # ============================================================
 # ESTILOS VISUALES 
@@ -534,6 +604,12 @@ with st.sidebar:
         )
         st.rerun()
 
+    # [SUPABASE] Estado de la conexión.
+    if supabase:
+        st.success("✅ Supabase conectado")
+    else:
+        st.error(f"❌ Supabase no conectado: {error_supabase}")
+
     st.caption(
         f"Hora local: {now.strftime('%d/%m/%Y %H:%M')}"
     )
@@ -616,6 +692,9 @@ if user_text:
     with st.chat_message("user", avatar="🧑‍💼"):
         st.markdown(user_text)
 
+    # [SUPABASE] Indica si la respuesta se generó sin errores.
+    respuesta_ok = False
+
     # Procesar la consulta.
     with st.chat_message("assistant", avatar="📊"):
 
@@ -632,6 +711,8 @@ if user_text:
                     assistant_text = (
                         "No se recibió una respuesta del agente."
                     )
+                else:
+                    respuesta_ok = True
 
                 st.markdown(assistant_text)
 
@@ -659,3 +740,16 @@ if user_text:
     st.session_state.agent_memory.add(
         "assistant", assistant_text
     )
+
+    # [SUPABASE] Guardar la conversación en la nube (solo respuestas correctas).
+    if respuesta_ok:
+        guardado, error_guardado = guardar_en_supabase(
+            user_text, assistant_text
+        )
+        if guardado:
+            st.toast("Conversación guardada en Supabase", icon="✅")
+        else:
+            st.warning(
+                "La respuesta se generó, pero no se pudo guardar "
+                f"en Supabase: {error_guardado}"
+            )
