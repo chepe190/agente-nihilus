@@ -4,6 +4,7 @@
 
 import os
 import json
+import uuid
 import base64
 import streamlit as st
 from pathlib import Path
@@ -28,9 +29,6 @@ except ImportError:
 # ============================================================
 
 load_dotenv()
-
-api_key = os.environ.get("GROQ_API_KEY")
-
 # Logo del agente (debe estar en la misma carpeta que este archivo).
 LOGO_PATH = Path(__file__).parent / "Nihilus.png"
 
@@ -57,6 +55,9 @@ def obtener_secreto(nombre, default=""):
     except Exception:
         pass
     return (os.getenv(nombre) or default).strip()
+
+
+api_key = obtener_secreto("GROQ_API_KEY")
 
 
 @st.cache_resource
@@ -95,9 +96,11 @@ def guardar_en_supabase(pregunta, respuesta):
         return False, error_supabase or "Supabase no conectado"
 
     try:
-        supabase.table(TABLA_CONVERSACIONES).insert(
-            {"pregunta": str(pregunta), "respuesta": str(respuesta)}
-        ).execute()
+        supabase.table(TABLA_CONVERSACIONES).insert({
+            "session_id": st.session_state.get("session_id"),
+            "pregunta": str(pregunta),
+            "respuesta": str(respuesta),
+        }).execute()
         return True, None
     except Exception as error:
         print(f"ERROR SUPABASE (conversaciones): {error}")
@@ -305,7 +308,7 @@ st.markdown(
 if not api_key:
     st.error(
         "No se encontró GROQ_API_KEY. "
-        "Configura tu clave en el archivo .env."
+        "Configúrala en Secrets (Streamlit Cloud) o en el archivo .env."
     )
     st.stop()
 
@@ -322,7 +325,7 @@ los resultados obtenidos para un mejor análisis económico.
 
 Herramientas disponibles:
 
-consultar_tipo_cambio_api:
+1. consultar_tipo_cambio_api:
    Consulta el tipo de cambio actual de una moneda respecto al quetzal.
    Requiere el código de la moneda, por ejemplo USD.
 
@@ -563,6 +566,10 @@ def process_response(client, memory_messages, user_text):
 # INTERFAZ WEB STREAMLIT
 # ============================================================
 
+# [SUPABASE] Identificador de la conversación actual.
+if "session_id" not in st.session_state:
+    st.session_state.session_id = str(uuid.uuid4())
+
 # Memoria e historial independientes por sesión.
 if "agent_memory" not in st.session_state:
     st.session_state.agent_memory = BasicMemory(
@@ -599,14 +606,19 @@ with st.sidebar:
     if st.button("🗑️ Limpiar conversación"):
         st.session_state.chat_history = []
         st.session_state.pending_prompt = None
+        st.session_state.session_id = str(uuid.uuid4())
         st.session_state.agent_memory = BasicMemory(
             max_messages=MEMORY_MAX_MESSAGES
         )
         st.rerun()
 
-    # [SUPABASE] Estado de la conexión.
+    # [SUPABASE] Estado real de la conexión (hace una consulta de prueba).
     if supabase:
-        st.success("✅ Supabase conectado")
+        try:
+            supabase.table(TABLA_CONVERSACIONES).select("id").limit(1).execute()
+            st.success("✅ Supabase conectado")
+        except Exception as error:
+            st.error(f"❌ Supabase: clave o tabla inválida ({error})")
     else:
         st.error(f"❌ Supabase no conectado: {error_supabase}")
 
@@ -656,7 +668,6 @@ if not st.session_state.chat_history:
         "¿Cómo ha evolucionado el PIB de México?",
         "¿Cuál es el precio de bitcoin en USD?",
     ]
-    
 
     e1, e2 = st.columns(2)
     for i, texto in enumerate(ejemplos):
