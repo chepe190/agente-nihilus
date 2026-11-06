@@ -316,7 +316,7 @@ client = Groq(api_key=api_key)
 
 now = datetime.now(ZoneInfo("America/Guatemala"))
 
-MEMORY_MAX_MESSAGES = 10
+MEMORY_MAX_MESSAGES = 6
 
 SYSTEM_PROMPT = """
 Eres un asistente que habla en español. Eres un experto en economía
@@ -513,7 +513,7 @@ def process_response(client, memory_messages, user_text):
     while True:
 
         resp = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
+            model="llama-3.1-8b-instant",
             messages=messages,
             tools=TOOLS
         )
