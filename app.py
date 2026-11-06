@@ -513,7 +513,7 @@ def process_response(client, memory_messages, user_text):
     while True:
 
         resp = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+            model="openai/gpt-oss-120b",
             messages=messages,
             tools=TOOLS
         )
