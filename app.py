@@ -1,21 +1,21 @@
 # ============================================================
 # AGENTE NIHILUS - INTERFAZ WEB CON STREAMLIT
 # ============================================================
-
+ 
 import os
 import json
 import uuid
 import base64
 import streamlit as st
 from pathlib import Path
-
+ 
 from dotenv import load_dotenv
 from groq import Groq
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from basic_memory import BasicMemory
 from intermediate_tools import IntermediateTools
-
+ 
 # [SUPABASE] Importación opcional: si el paquete no está, la app sigue funcionando.
 try:
     from supabase import create_client
@@ -23,29 +23,29 @@ try:
 except ImportError:
     create_client = None
     SUPABASE_DISPONIBLE = False
-
+ 
 # ============================================================
 # CONFIGURACION
 # ============================================================
-
+ 
 load_dotenv()
 # Logo del agente (debe estar en la misma carpeta que este archivo).
 LOGO_PATH = Path(__file__).parent / "Nihilus.png"
-
+ 
 st.set_page_config(
     page_title="Agente Nihilus",
     page_icon=str(LOGO_PATH) if LOGO_PATH.exists() else "📊",
     layout="centered",
     initial_sidebar_state="expanded"
 )
-
+ 
 # ============================================================
 # [SUPABASE] CONEXION Y GUARDADO DE CONVERSACIONES
 # ============================================================
-
+ 
 TABLA_CONVERSACIONES = "conversaciones_nihilus"
-
-
+ 
+ 
 def obtener_secreto(nombre, default=""):
     """Lee primero Streamlit Secrets y, si no existe, la variable de entorno (.env)."""
     try:
@@ -55,46 +55,48 @@ def obtener_secreto(nombre, default=""):
     except Exception:
         pass
     return (os.getenv(nombre) or default).strip()
-
-
+ 
+ 
 api_key = obtener_secreto("GROQ_API_KEY")
-
-
+# [GROQ 2] Segunda clave de respaldo (opcional).
+api_key2 = obtener_secreto("GROQ_API_KEY2")
+ 
+ 
 @st.cache_resource
 def _crear_cliente_supabase(url, key):
     # Si lanza excepción, Streamlit NO cachea el fallo y reintenta.
     return create_client(url, key)
-
-
+ 
+ 
 def init_supabase():
     """Devuelve (cliente, error). Nunca imprime la clave."""
     if not SUPABASE_DISPONIBLE:
         return None, "Falta instalar el paquete 'supabase' (agrégalo a requirements.txt)."
-
+ 
     # Limpia comillas, espacios y rutas sobrantes (/rest/v1) de la URL.
     url = obtener_secreto("SUPABASE_URL").strip().strip('"').strip("'").rstrip("/")
     for sufijo in ("/rest/v1", "/rest"):
         if url.endswith(sufijo):
             url = url[: -len(sufijo)].rstrip("/")
-
+ 
     key = obtener_secreto("SUPABASE_KEY").strip().strip('"').strip("'")
-
+ 
     if not url or not key:
         return None, "Faltan SUPABASE_URL o SUPABASE_KEY."
-
+ 
     try:
         return _crear_cliente_supabase(url, key), None
     except Exception as error:
         return None, f"No se pudo crear el cliente: {error}"
-
-
+ 
+ 
 supabase, error_supabase = init_supabase()
-
-
+ 
+ 
 def guardar_en_supabase(pregunta, respuesta):
     if supabase is None:
         return False, error_supabase or "Supabase no conectado"
-
+ 
     try:
         supabase.table(TABLA_CONVERSACIONES).insert({
             "session_id": st.session_state.get("session_id"),
@@ -105,11 +107,11 @@ def guardar_en_supabase(pregunta, respuesta):
     except Exception as error:
         print(f"ERROR SUPABASE (conversaciones): {error}")
         return False, str(error)
-
+ 
 # ============================================================
 # ESTILOS VISUALES 
 # ============================================================
-
+ 
 CUSTOM_CSS = """
 <style>
     /* ---------- Paleta ---------- */
@@ -124,7 +126,7 @@ CUSTOM_CSS = """
         --accent-2: #38bdf8;
         --gold: #fbbf24;
     }
-
+ 
     /* ---------- Fondo general ---------- */
     .stApp {
         background:
@@ -132,18 +134,18 @@ CUSTOM_CSS = """
             var(--bg);
         color: var(--text);
     }
-
+ 
     /* Ocultar menú/pie de Streamlit para una vista más limpia */
     #MainMenu, footer { visibility: hidden; }
     header[data-testid="stHeader"] { background: transparent; }
-
+ 
     /* ---------- Contenedor central ---------- */
     .block-container {
         max-width: 860px;
         padding-top: 2rem;
         padding-bottom: 6rem;
     }
-
+ 
     /* ---------- Encabezado ---------- */
     .nihilus-hero {
         display: flex;
@@ -178,7 +180,7 @@ CUSTOM_CSS = """
     .nihilus-sub {
         color: var(--muted); font-size: 0.95rem; margin-top: 4px;
     }
-
+ 
     /* ---------- Tarjetas de bienvenida ---------- */
     .welcome-card {
         background: var(--panel);
@@ -198,7 +200,7 @@ CUSTOM_CSS = """
         letter-spacing: 0.08em; text-transform: uppercase;
         margin: 22px 0 8px 2px;
     }
-
+ 
     /* ---------- Mensajes del chat ---------- */
     [data-testid="stChatMessage"] {
         background: var(--panel);
@@ -215,7 +217,7 @@ CUSTOM_CSS = """
     [data-testid="stChatMessage"] li {
         font-size: 1rem; line-height: 1.6;
     }
-
+ 
     /* Tablas dentro de las respuestas */
     [data-testid="stChatMessage"] table {
         width: 100%; border-collapse: collapse; margin: 8px 0;
@@ -229,7 +231,7 @@ CUSTOM_CSS = """
     [data-testid="stChatMessage"] td {
         padding: 7px 10px; border-bottom: 1px solid #1d2a45;
     }
-
+ 
     /* ---------- Barra lateral ---------- */
     [data-testid="stSidebar"] {
         background: var(--panel);
@@ -237,7 +239,7 @@ CUSTOM_CSS = """
     }
     [data-testid="stSidebar"] h2,
     [data-testid="stSidebar"] h3 { color: var(--text); }
-
+ 
     .side-item {
         display: flex; gap: 10px; align-items: center;
         padding: 8px 10px; margin-bottom: 6px;
@@ -246,7 +248,7 @@ CUSTOM_CSS = """
         border-radius: 10px;
         font-size: 0.9rem; color: var(--text);
     }
-
+ 
     /* ---------- Botones ---------- */
     .stButton > button {
         width: 100%;
@@ -264,7 +266,7 @@ CUSTOM_CSS = """
         background: #12304033;
         transform: translateY(-1px);
     }
-
+ 
     /* ---------- Campo de entrada ---------- */
     [data-testid="stChatInput"] {
         border-radius: 14px;
@@ -272,15 +274,15 @@ CUSTOM_CSS = """
     [data-testid="stChatInput"] textarea {
         font-size: 1rem;
     }
-
+ 
     /* ---------- Spinner y alertas ---------- */
     [data-testid="stSpinner"] { color: var(--accent); }
     [data-testid="stAlert"] { border-radius: 12px; }
 </style>
 """
-
+ 
 st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-
+ 
 # Encabezado
 def logo_html():
     """Devuelve la imagen Nihilus.png incrustada; si no existe, un emoji."""
@@ -288,8 +290,8 @@ def logo_html():
         datos = base64.b64encode(LOGO_PATH.read_bytes()).decode()
         return f'<img src="data:image/png;base64,{datos}" alt="Nihilus">'
     return "📊"
-
-
+ 
+ 
 st.markdown(
     f"""
     <div class="nihilus-hero">
@@ -304,60 +306,62 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
+ 
 if not api_key:
     st.error(
         "No se encontró GROQ_API_KEY. "
         "Configúrala en Secrets (Streamlit Cloud) o en el archivo .env."
     )
     st.stop()
-
+ 
 client = Groq(api_key=api_key)
-
+# [GROQ 2] Segundo cliente (solo si existe GROQ_API_KEY2).
+client2 = Groq(api_key=api_key2) if api_key2 else None
+ 
 now = datetime.now(ZoneInfo("America/Guatemala"))
-
+ 
 MEMORY_MAX_MESSAGES = 6
-
+ 
 SYSTEM_PROMPT = """
 Eres un asistente que habla en español. Eres un experto en economía
 y econometría. Responde de manera muy breve y concisa e interpreta
 los resultados obtenidos para un mejor análisis económico.
-
+ 
 Herramientas disponibles:
-
+ 
 1. consultar_tipo_cambio_api:
    Consulta el tipo de cambio actual de una moneda respecto al quetzal.
    Requiere el código de la moneda, por ejemplo USD.
-
+ 
 2. consultar_desempleo_pais_api:
    Consulta el historial de la tasa de desempleo de un país.
    Requiere el código ISO del país, por ejemplo GT, US o MX.
-
+ 
 3. consultar_info_pais_api:
    Consulta información general de un país.
    Requiere el nombre del país.
-
+ 
 4. consultar_pib_pais_api:
    Consulta el historial del PIB de un país.
    Requiere el código ISO del país.
-
+ 
 5. consultar_inflacion_pais_api:
    Consulta el historial de inflación de un país.
    Requiere el código ISO del país.
-
+ 
 6. consultar_precio_cripto_api:
    Consulta el precio de una criptomoneda respecto a una moneda
    de referencia. Requiere el nombre de la criptomoneda.
-
+ 
 Devuelve las respuestas de las herramientas tal cual.
 Cuando ejecutes una herramienta, no generes texto explicativo
 ni anuncies su nombre antes de realizar la llamada.
 """
-
+ 
 # ============================================================
 # DEFINICION DE HERRAMIENTAS PARA GROQ
 # ============================================================
-
+ 
 def crear_herramienta(nombre, descripcion, propiedades, requeridos):
     return {
         "type": "function",
@@ -371,8 +375,8 @@ def crear_herramienta(nombre, descripcion, propiedades, requeridos):
             }
         }
     }
-
-
+ 
+ 
 TOOLS = [
     crear_herramienta(
         "consultar_tipo_cambio_api",
@@ -385,7 +389,7 @@ TOOLS = [
         },
         ["moneda"]
     ),
-
+ 
     crear_herramienta(
         "consultar_desempleo_pais_api",
         "Consulta el historial de desempleo de un país.",
@@ -397,7 +401,7 @@ TOOLS = [
         },
         ["codigo_pais"]
     ),
-
+ 
     crear_herramienta(
         "consultar_info_pais_api",
         "Consulta información general de un país.",
@@ -409,7 +413,7 @@ TOOLS = [
         },
         ["pais"]
     ),
-
+ 
     crear_herramienta(
         "consultar_pib_pais_api",
         "Consulta el historial del PIB de un país.",
@@ -421,7 +425,7 @@ TOOLS = [
         },
         ["codigo_pais"]
     ),
-
+ 
     crear_herramienta(
         "consultar_inflacion_pais_api",
         "Consulta el historial de inflación de un país.",
@@ -433,7 +437,7 @@ TOOLS = [
         },
         ["codigo_pais"]
     ),
-
+ 
     crear_herramienta(
         "consultar_precio_cripto_api",
         "Consulta el precio de una criptomoneda.",
@@ -450,39 +454,39 @@ TOOLS = [
         ["criptomoneda"]
     )
 ]
-
+ 
 # ============================================================
 # EJECUCION DE LAS HERRAMIENTAS
 # ============================================================
-
+ 
 def ejecutar_herramienta(nombre, args):
     tools = IntermediateTools()
-
+ 
     if nombre == "consultar_tipo_cambio_api":
         return tools.consultar_tipo_cambio_api(
             moneda=args["moneda"]
         )
-
+ 
     elif nombre == "consultar_desempleo_pais_api":
         return tools.consultar_desempleo_pais_api(
             codigo_pais=args["codigo_pais"]
         )
-
+ 
     elif nombre == "consultar_info_pais_api":
         return tools.consultar_info_pais_api(
             pais=args["pais"]
         )
-
+ 
     elif nombre == "consultar_pib_pais_api":
         return tools.consultar_pib_pais_api(
             codigo_pais=args["codigo_pais"]
         )
-
+ 
     elif nombre == "consultar_inflacion_pais_api":
         return tools.consultar_inflacion_pais_api(
             codigo_pais=args["codigo_pais"]
         )
-
+ 
     elif nombre == "consultar_precio_cripto_api":
         return tools.consultar_precio_cripto_api(
             criptomoneda=args["criptomoneda"],
@@ -490,40 +494,60 @@ def ejecutar_herramienta(nombre, args):
                 "moneda_referencia", "usd"
             )
         )
-
+ 
     return {"error": f"Herramienta desconocida: {nombre}"}
-
-
+ 
+ 
+# ============================================================
+# [GROQ 2] LLAMADA AL MODELO CON RESPALDO DE SEGUNDA API KEY
+# ============================================================
+ 
+def crear_completion(client_principal, messages):
+    """Intenta con la primera clave y, si falla, con GROQ_API_KEY2."""
+    clientes = [client_principal]
+    if client2 is not None:
+        clientes.append(client2)
+ 
+    ultimo_error = None
+    for c in clientes:
+        try:
+            return c.chat.completions.create(
+                model="openai/gpt-oss-120b",
+                messages=messages,
+                tools=TOOLS
+            )
+        except Exception as error:
+            ultimo_error = error
+ 
+    raise ultimo_error
+ 
+ 
 # ============================================================
 # PROCESAMIENTO DE RESPUESTAS DEL AGENTE
 # ============================================================
-
+ 
 def process_response(client, memory_messages, user_text):
-
+ 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT}
     ]
-
+ 
     messages.extend(memory_messages)
     messages.append({
         "role": "user",
         "content": user_text
     })
-
+ 
     while True:
-
-        resp = client.chat.completions.create(
-            model="openai/gpt-oss-120b",
-            messages=messages,
-            tools=TOOLS
-        )
-
+ 
+        resp = crear_completion(client, messages)
+ 
         msg = resp.choices[0].message
-
+ 
         # Si no hay llamadas a herramientas, devolver respuesta.
         if not getattr(msg, "tool_calls", None):
             return msg.content or ""
-
+ 
         # Agregar al historial la solicitud de herramientas.
         messages.append({
             "role": "assistant",
@@ -532,25 +556,25 @@ def process_response(client, memory_messages, user_text):
                 tc.model_dump() for tc in msg.tool_calls
             ]
         })
-
+ 
         for tool_call in msg.tool_calls:
-
+ 
             nombre = tool_call.function.name
-
+ 
             args = json.loads(
                 tool_call.function.arguments or "{}"
             )
-
+ 
             try:
                 resultado = ejecutar_herramienta(
                     nombre, args
                 )
-
+ 
             except Exception as error:
                 resultado = {
                     "error": str(error)
                 }
-
+ 
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
@@ -560,34 +584,34 @@ def process_response(client, memory_messages, user_text):
                     default=str
                 )
             })
-
-
+ 
+ 
 # ============================================================
 # INTERFAZ WEB STREAMLIT
 # ============================================================
-
+ 
 # [SUPABASE] Identificador de la conversación actual.
 if "session_id" not in st.session_state:
     st.session_state.session_id = str(uuid.uuid4())
-
+ 
 # Memoria e historial independientes por sesión.
 if "agent_memory" not in st.session_state:
     st.session_state.agent_memory = BasicMemory(
         max_messages=MEMORY_MAX_MESSAGES
     )
-
+ 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
-
+ 
 # Consulta elegida desde los ejemplos de la pantalla de bienvenida.
 if "pending_prompt" not in st.session_state:
     st.session_state.pending_prompt = None
-
+ 
 # Barra lateral.
 with st.sidebar:
     st.markdown("### ⚙️ Panel")
     st.write("Agente de economía y econometría.")
-
+ 
     st.markdown("**Indicadores disponibles**")
     st.markdown(
         """
@@ -600,9 +624,9 @@ with st.sidebar:
         """,
         unsafe_allow_html=True
     )
-
+ 
     st.markdown("---")
-
+ 
     if st.button("🗑️ Limpiar conversación"):
         st.session_state.chat_history = []
         st.session_state.pending_prompt = None
@@ -611,7 +635,7 @@ with st.sidebar:
             max_messages=MEMORY_MAX_MESSAGES
         )
         st.rerun()
-
+ 
     # [SUPABASE] Estado real de la conexión (hace una consulta de prueba).
     if supabase:
         try:
@@ -621,19 +645,19 @@ with st.sidebar:
             st.error(f"❌ Supabase: clave o tabla inválida ({error})")
     else:
         st.error(f"❌ Supabase no conectado: {error_supabase}")
-
+ 
     st.caption(
         f"Hora local: {now.strftime('%d/%m/%Y %H:%M')}"
     )
-
+ 
 # Pantalla de bienvenida (solo cuando no hay conversación).
 if not st.session_state.chat_history:
-
+ 
     st.markdown(
         '<div class="section-label">¿Qué puedo consultar por ti?</div>',
         unsafe_allow_html=True
     )
-
+ 
     c1, c2, c3 = st.columns(3)
     with c1:
         st.markdown(
@@ -656,77 +680,77 @@ if not st.session_state.chat_history:
             'economías.</p></div>',
             unsafe_allow_html=True
         )
-
+ 
     st.markdown(
         '<div class="section-label">Prueba con un ejemplo</div>',
         unsafe_allow_html=True
     )
-
+ 
     ejemplos = [
         "¿Cuál es el tipo de cambio del USD hoy?",
         "Muéstrame el historial de inflación de Guatemala",
         "¿Cómo ha evolucionado el PIB de México?",
         "¿Cuál es el precio de bitcoin en USD?",
     ]
-
+ 
     e1, e2 = st.columns(2)
     for i, texto in enumerate(ejemplos):
         with (e1 if i % 2 == 0 else e2):
             if st.button(texto, key=f"ejemplo_{i}"):
                 st.session_state.pending_prompt = texto
                 st.rerun()
-
+ 
 # Mostrar el historial de conversación.
 for mensaje in st.session_state.chat_history:
     avatar = "🧑‍💼" if mensaje["role"] == "user" else "📊"
     with st.chat_message(mensaje["role"], avatar=avatar):
         st.markdown(mensaje["content"])
-
+ 
 # Campo de entrada del usuario.
 user_text = st.chat_input(
     "Escribe tu consulta económica..."
 )
-
+ 
 # Si se eligió un ejemplo, usarlo como consulta.
 if st.session_state.pending_prompt:
     user_text = st.session_state.pending_prompt
     st.session_state.pending_prompt = None
-
+ 
 if user_text:
-
+ 
     # Mostrar y guardar el mensaje del usuario.
     st.session_state.chat_history.append({
         "role": "user",
         "content": user_text
     })
-
+ 
     with st.chat_message("user", avatar="🧑‍💼"):
         st.markdown(user_text)
-
+ 
     # [SUPABASE] Indica si la respuesta se generó sin errores.
     respuesta_ok = False
-
+ 
     # Procesar la consulta.
     with st.chat_message("assistant", avatar="📊"):
-
+ 
         with st.spinner("Nihilus está analizando..."):
-
+ 
             try:
                 assistant_text = process_response(
                     client,
                     st.session_state.agent_memory.messages(),
                     user_text
                 )
-
+ 
                 if not assistant_text:
                     assistant_text = (
                         "No se recibió una respuesta del agente."
                     )
                 else:
                     respuesta_ok = True
-
+ 
                 st.markdown(assistant_text)
-
+ 
             except Exception as error:
                 assistant_text = (
                     "No fue posible procesar la consulta. "
@@ -734,24 +758,24 @@ if user_text:
                     "y las herramientas instaladas.\n\n"
                     f"Detalle: {error}"
                 )
-
+ 
                 st.error(assistant_text)
-
+ 
     # Guardar respuesta en el historial de la interfaz.
     st.session_state.chat_history.append({
         "role": "assistant",
         "content": assistant_text
     })
-
+ 
     # Actualizar la memoria del agente.
     st.session_state.agent_memory.add(
         "user", user_text
     )
-
+ 
     st.session_state.agent_memory.add(
         "assistant", assistant_text
     )
-
+ 
     # [SUPABASE] Guardar la conversación en la nube (solo respuestas correctas).
     if respuesta_ok:
         guardado, error_guardado = guardar_en_supabase(
@@ -764,3 +788,4 @@ if user_text:
                 "La respuesta se generó, pero no se pudo guardar "
                 f"en Supabase: {error_guardado}"
             )
+ 
