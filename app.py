@@ -322,6 +322,10 @@ now = datetime.now(ZoneInfo("America/Guatemala"))
  
 MEMORY_MAX_MESSAGES = 6
  
+# [LIMITE] Máximo de caracteres por resultado de herramienta y por mensaje en memoria.
+MAX_CHARS_HERRAMIENTA = 5000
+MAX_CHARS_MEMORIA = 1500
+ 
 SYSTEM_PROMPT = """
 Eres un asistente que habla en español. Eres un experto en economía
 y econometría. Responde de manera muy breve y concisa e interpreta
@@ -575,14 +579,23 @@ def process_response(client, memory_messages, user_text):
                     "error": str(error)
                 }
  
+            contenido = json.dumps(
+                resultado,
+                ensure_ascii=False,
+                default=str
+            )
+ 
+            # [LIMITE] Recorta resultados muy largos para no pasar el límite de tokens.
+            if len(contenido) > MAX_CHARS_HERRAMIENTA:
+                contenido = (
+                    contenido[:MAX_CHARS_HERRAMIENTA]
+                    + "... [resultado recortado]"
+                )
+ 
             messages.append({
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "content": json.dumps(
-                    resultado,
-                    ensure_ascii=False,
-                    default=str
-                )
+                "content": contenido
             })
  
  
@@ -767,14 +780,16 @@ if user_text:
         "content": assistant_text
     })
  
-    # Actualizar la memoria del agente.
-    st.session_state.agent_memory.add(
-        "user", user_text
-    )
+    # Actualizar la memoria del agente (solo respuestas correctas y recortadas,
+    # para que los errores no se reenvíen en las siguientes consultas).
+    if respuesta_ok:
+        st.session_state.agent_memory.add(
+            "user", user_text[:MAX_CHARS_MEMORIA]
+        )
  
-    st.session_state.agent_memory.add(
-        "assistant", assistant_text
-    )
+        st.session_state.agent_memory.add(
+            "assistant", assistant_text[:MAX_CHARS_MEMORIA]
+        )
  
     # [SUPABASE] Guardar la conversación en la nube (solo respuestas correctas).
     if respuesta_ok:
